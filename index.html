@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skyler — A Short Flight</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --accent:#e9785d;
+    --haze:255,236,226;
+    --ink:#3e3366;
+    --ink-soft:#6f6591;
+    --serif:"Instrument Serif", Georgia, "Times New Roman", serif;
+    --sans:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:auto}
+  body{
+    font-family:var(--sans); color:#fff; overflow-x:hidden;
+    background:linear-gradient(180deg,#4a5f9e 0%,#9a8fc4 45%,#ffc2a1 72%,#5f73a3 100%) fixed;
+    -webkit-font-smoothing:antialiased;
+  }
+  canvas#scene{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0}
+  #scroll-space{position:relative;z-index:-1;width:1px}
+
+  /* whiteout when flying through a cloud */
+  #haze{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:0;
+    background:radial-gradient(ellipse at 50% 50%, rgba(var(--haze),1) 0%, rgba(var(--haze),.96) 55%, rgba(var(--haze),.85) 100%);}
+  #vignette{position:fixed;inset:0;z-index:1;pointer-events:none;
+    background:radial-gradient(ellipse at 50% 55%, transparent 55%, rgba(20,16,50,.28) 100%);}
+
+  /* top bar */
+  .topbar{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;justify-content:space-between;align-items:center;
+    padding:22px clamp(18px,4vw,48px);pointer-events:none}
+  .wordmark{font-size:12px;letter-spacing:.42em;font-weight:600;text-transform:uppercase;color:#fff;text-decoration:none;
+    text-shadow:0 1px 12px rgba(20,20,60,.25);pointer-events:auto}
+  .topbar nav{display:flex;gap:10px;pointer-events:auto}
+  .pill{font:500 13px/1 var(--sans);color:#fff;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.45);
+    padding:10px 16px;border-radius:999px;cursor:pointer;text-decoration:none;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    transition:background .2s}
+  .pill:hover{background:rgba(255,255,255,.3)}
+
+  /* hero */
+  #hero{position:fixed;left:0;right:0;top:15vh;z-index:3;text-align:center;padding:0 24px;pointer-events:none;
+    text-shadow:0 1px 3px rgba(30,24,70,.35), 0 2px 28px rgba(40,30,90,.45)}
+  #hero .kicker{font-size:13px;letter-spacing:.42em;text-transform:uppercase;font-weight:500;opacity:.92}
+  #hero h1{font-family:var(--serif);font-weight:400;font-size:clamp(76px,12vw,164px);line-height:.95;margin:14px 0 18px;letter-spacing:-.01em}
+  #hero .tagline{font-family:var(--serif);font-style:italic;font-size:clamp(19px,2vw,24px);max-width:560px;margin:0 auto;opacity:.95}
+
+  /* scroll hint */
+  #scroll-hint{position:fixed;left:50%;bottom:7vh;transform:translateX(-50%);z-index:4;display:flex;flex-direction:column;align-items:center;gap:12px;
+    font-size:11px;letter-spacing:.3em;text-transform:uppercase;font-weight:500;transition:opacity .5s;pointer-events:none;white-space:nowrap;
+    text-shadow:0 1px 3px rgba(20,20,60,.45), 0 0 16px rgba(20,20,60,.35)}
+  .mouse{width:24px;height:38px;border:1.5px solid rgba(255,255,255,.9);border-radius:14px;position:relative}
+  .mouse::after{content:"";position:absolute;left:50%;top:7px;width:3px;height:8px;margin-left:-1.5px;border-radius:2px;background:#fff;animation:wheel 1.8s infinite}
+  @keyframes wheel{0%{opacity:0;transform:translateY(-2px)}30%{opacity:1}100%{opacity:0;transform:translateY(12px)}}
+  .swipe{display:none;width:2px;height:40px;background:linear-gradient(to top,rgba(255,255,255,0),#fff);position:relative;animation:swipe 1.8s infinite}
+  @keyframes swipe{0%{transform:translateY(14px);opacity:0}40%{opacity:1}100%{transform:translateY(-10px);opacity:0}}
+
+  /* boarding gate: music can only start after a tap, so the journey starts with one */
+  html.locked, html.locked body{overflow:hidden;height:100%}
+  .board{position:fixed;left:50%;bottom:8vh;transform:translateX(-50%);z-index:7;display:flex;align-items:center;gap:12px;
+    font:600 13px/1 var(--sans);letter-spacing:.24em;text-transform:uppercase;color:#3e3366;white-space:nowrap;
+    background:rgba(255,252,247,.92);border:0;border-radius:999px;padding:17px 28px;cursor:pointer;
+    box-shadow:0 14px 40px -12px rgba(40,25,90,.45);transition:opacity .6s, transform .6s;animation:boardPulse 2.4s ease-in-out infinite}
+  .board .board-ico{font-size:16px;letter-spacing:0;color:var(--accent)}
+  .board:hover{background:#fff}
+  @keyframes boardPulse{50%{box-shadow:0 14px 40px -12px rgba(40,25,90,.45),0 0 0 10px rgba(255,255,255,.18)}}
+  body.boarded .board{opacity:0;pointer-events:none;transform:translate(-50%,12px)}
+  body:not(.boarded) #scroll-hint{opacity:0 !important}
+  .sound{display:none}
+  body.boarded .sound{display:inline-block}
+  .sound.off{opacity:.7}
+  #nudge{position:fixed;left:50%;bottom:28px;transform:translate(-50%,10px);z-index:4;opacity:0;transition:opacity .6s, transform .6s;
+    font-size:11px;letter-spacing:.26em;text-transform:uppercase;pointer-events:none;display:flex;align-items:center;gap:8px;
+    background:rgba(20,22,50,.22);padding:9px 14px;border-radius:999px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  #nudge.on{opacity:1;transform:translate(-50%,0)}
+  #nudge .arrow{animation:bob 1.4s infinite}
+  @keyframes bob{50%{transform:translateY(3px)}}
+
+  /* floating labels over story clouds */
+  .cloud-label{position:fixed;left:0;top:0;z-index:2;pointer-events:none;opacity:0;text-align:center;white-space:nowrap;
+    transform:translate(-50%,-100%);text-shadow:0 1px 3px rgba(20,20,60,.55), 0 0 18px rgba(20,20,60,.4)}
+  .cloud-label .num{display:block;font-family:var(--serif);font-size:30px;line-height:1}
+  .cloud-label .q{display:block;font-size:11px;letter-spacing:.26em;text-transform:uppercase;font-weight:500;margin-top:6px}
+  .cloud-label .stem{display:block;width:1px;height:26px;margin:8px auto 0;background:linear-gradient(#fff,rgba(255,255,255,0))}
+
+  /* story card */
+  #card{position:fixed;z-index:5;right:clamp(24px,7vw,120px);top:50%;width:min(440px,38vw);max-height:80vh;overflow:auto;
+    transform:translateY(-50%);opacity:0;pointer-events:none;color:var(--ink);
+    background:rgba(255,252,247,.88);border:1px solid rgba(255,255,255,.7);border-radius:20px;
+    padding:34px 34px 30px;box-shadow:0 30px 80px -20px rgba(30,20,80,.35);
+    backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px) saturate(1.2)}
+  #card.on{pointer-events:auto}
+  .c-kicker{font-size:11px;letter-spacing:.24em;text-transform:uppercase;font-weight:600;color:var(--accent);display:flex;gap:10px;align-items:center}
+  .c-kicker .dot{width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.6}
+  .c-title{font-family:var(--serif);font-weight:400;font-style:italic;font-size:40px;line-height:1.1;margin:0 0 18px;color:var(--ink)}
+  .c-num{font-style:normal;color:var(--accent);margin-right:.4em}
+  .c-story p{font-size:16.5px;line-height:1.7;color:var(--ink-soft);margin-bottom:4px}
+  .c-take{margin-top:20px;padding:14px 0 2px 16px;border-left:2px solid var(--accent)}
+  .c-take .lbl{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;font-weight:600;color:var(--accent)}
+  .c-take p{font-family:var(--serif);font-size:21px;line-height:1.3;color:var(--ink);margin-top:6px}
+  .contact{margin-top:22px;display:flex;flex-direction:column;gap:10px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:12px;background:rgba(29,35,64,.05);font-size:14.5px}
+  .row .k{font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-soft);font-weight:600}
+  .row .v{color:var(--ink);word-break:break-all}
+  .row a.v{text-decoration:none;border-bottom:1px solid rgba(29,35,64,.25)}
+  .mini{font:600 12px/1 var(--sans);border:0;background:var(--ink);color:#fff;padding:8px 11px;border-radius:8px;cursor:pointer;flex-shrink:0}
+  .btn-main{display:block;text-align:center;margin-top:6px;padding:15px;border-radius:12px;background:var(--accent);color:#fff;
+    text-decoration:none;font-weight:600;font-size:15px;letter-spacing:.01em}
+  .ph{font-style:italic;color:#8a7f9f;background:rgba(138,127,159,.08);outline:1px dashed rgba(138,127,159,.55);outline-offset:2px;border-radius:4px;padding:0 3px}
+
+  /* flight log, bottom left */
+  #flightlog{position:fixed;left:clamp(18px,4vw,48px);bottom:30px;z-index:4;font-size:11px;letter-spacing:.28em;text-transform:uppercase;font-weight:500;
+    text-shadow:0 1px 10px rgba(20,20,60,.35);pointer-events:none;line-height:1.9}
+  #flightlog .t{font-family:var(--serif);font-size:22px;letter-spacing:.04em;text-transform:none;display:block}
+
+  /* progress rail, right side */
+  #rail{position:fixed;right:clamp(16px,2.4vw,34px);top:50%;transform:translateY(-50%);z-index:6;height:min(46vh,340px);width:20px}
+  #rail .track{position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,.35)}
+  #rail .fill{position:absolute;left:50%;top:0;width:1px;background:#fff;height:0}
+  #rail button{position:absolute;left:50%;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;border:1.5px solid #fff;background:transparent;cursor:pointer;padding:0}
+  #rail button.done{background:#fff}
+  #rail button span{position:absolute;right:20px;top:50%;transform:translateY(-50%);font-size:10px;letter-spacing:.2em;text-transform:uppercase;white-space:nowrap;opacity:0;transition:opacity .2s;color:#fff;text-shadow:0 1px 3px rgba(20,20,60,.6), 0 0 14px rgba(20,20,60,.45)}
+  #rail button:hover span, #rail button.active span{opacity:1}
+  body.card-on #rail button span{opacity:0}
+  #hero .ph{color:rgba(255,255,255,.88);background:rgba(255,255,255,.1);outline-color:rgba(255,255,255,.55)}
+  #topbar-progress{display:none}
+
+  /* list view ("skip the flight") */
+  #list{position:fixed;inset:0;z-index:20;background:#faf7f2;color:var(--ink);overflow:auto;display:none}
+  #list.open{display:block}
+  #list .wrap{max-width:720px;margin:0 auto;padding:90px 28px 80px}
+  #list .close{position:fixed;top:20px;right:22px;border:1px solid rgba(29,35,64,.2);background:#fff;color:var(--ink);border-radius:999px;padding:10px 16px;font:500 13px var(--sans);cursor:pointer}
+  #list h1{font-family:var(--serif);font-weight:400;font-size:64px;line-height:1}
+  #list .lt{font-family:var(--serif);font-style:italic;font-size:21px;color:var(--ink-soft);margin:10px 0 50px}
+  #list article{padding:34px 0;border-top:1px solid rgba(29,35,64,.12)}
+  #list .c-title{font-size:32px;margin-top:10px}
+
+  .no-webgl canvas#scene, .no-webgl #scroll-hint, .no-webgl #rail, .no-webgl #flightlog{display:none}
+
+  /* ---------- phone layout ---------- */
+  @media (max-width:760px){
+    .topbar{padding:16px 16px}
+    .pill{padding:9px 13px;font-size:12px}
+    #hero{top:13vh}
+    #card{left:12px;right:12px;width:auto;top:50%;top:50dvh;bottom:auto;transform:none;max-height:46vh;max-height:46dvh;padding:24px 22px 22px;border-radius:18px}
+    .c-title{font-size:30px;margin:0 0 12px}
+    .c-story p{font-size:15px;line-height:1.62}
+    .c-take p{font-size:19px}
+    #rail{display:none}
+    #topbar-progress{display:block;position:fixed;top:0;left:0;height:2px;background:#fff;z-index:11;width:0}
+    #flightlog{bottom:auto;top:62px;font-size:9.5px}
+    #flightlog .t{font-size:18px}
+    .mouse{display:none}.swipe{display:block}
+    .cloud-label .num{font-size:24px}
+    #list h1{font-size:48px}
+  }
+  @media (prefers-reduced-motion:reduce){ .mouse::after,.swipe,#nudge .arrow{animation:none} }
+</style>
+</head>
+<body>
+<canvas id="scene" aria-hidden="true"></canvas>
+<div id="haze"></div>
+<div id="vignette"></div>
+<div id="topbar-progress"></div>
+<header class="topbar"><span></span><nav><button class="pill sound" id="sound" aria-label="Turn music off">♪ On</button><button class="pill" id="skip">Skip the flight</button></nav></header>
+<audio id="bgm" loop preload="auto"></audio>
+
+
+
+<section id="hero">
+  <div class="kicker" id="h-kicker"></div>
+  <h1 id="h-name"></h1>
+  <p class="tagline" id="h-tagline"></p>
+</section>
+
+<div id="scroll-hint"><div class="mouse"></div><div class="swipe"></div><span id="hint-text"></span></div>
+<button id="board" class="board"><span class="board-ico">&#9992;&#xFE0E;</span><span id="board-text">Board the flight</span></button>
+<div id="nudge"><span>Keep scrolling</span><span class="arrow">↓</span></div>
+<div id="labels"></div>
+<aside id="card" aria-live="polite"></aside>
+<nav id="rail" aria-label="Flight progress"><div class="track"></div><div class="fill"></div></nav>
+
+<div id="list" role="dialog" aria-label="All stories"><button class="close" id="list-close">Back to the flight</button><div class="wrap" id="list-wrap"></div></div>
+
+<div id="scroll-space"></div>
+
+<script src="content.js"></script>
+<script type="module">
+/* ====================================================================
+   Skyler — a short flight. Scroll drives the plane along a path;
+   each story cloud is a "chapter", the last cloud is the landing.
+   All text lives in content.js.
+   ==================================================================== */
+const C = window.SITE_CONTENT || {};
+const chapters = Array.isArray(C.chapters) ? C.chapters : [];
+const landing = C.landing || {};
+const $ = s => document.querySelector(s);
+const isMobile = matchMedia('(max-width: 760px), (pointer: coarse)').matches;
+
+/* ---------- helpers ---------- */
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = t => { t = clamp(t); return t * t * (3 - 2 * t); };
+const pad = n => String(n).padStart(2, '0');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const txt = s => { const t = String(s ?? '').trim(); return /^\[[\s\S]*\]$/.test(t) ? `<span class="ph">${esc(t)}</span>` : esc(t); };
+function keys(k, x) {
+  if (x <= k[0][0]) return k[0][1];
+  for (let i = 1; i < k.length; i++) if (x <= k[i][0]) { const [x0, y0] = k[i - 1], [x1, y1] = k[i]; return y0 + (y1 - y0) * (x - x0) / (x1 - x0); }
+  return k[k.length - 1][1];
+}
+
+/* ---------- static text ---------- */
+$('#h-kicker').innerHTML = txt(C.kicker);
+$('#h-name').innerHTML = txt(C.name || 'Skyler');
+$('#h-tagline').innerHTML = txt(C.tagline);
+$('#hint-text').textContent = isMobile ? (C.scrollHintMobile || 'Swipe up to take off') : (C.scrollHint || 'Scroll to take off');
+const LABEL_TXT = C.label || 'Fun fact';
+
+function chapterHTML(c, i) {
+  return `<h2 class="c-title"><span class="c-num">${pad(i + 1)}</span>${txt(c.title)}</h2>
+    <div class="c-story"><p>${txt(c.text)}</p></div>`;
+}
+function landingHTML() {
+  const L = landing;
+  return `<h2 class="c-title">${txt(L.heading)}</h2>
+    ${L.message ? `<div class="c-story"><p>${txt(L.message)}</p></div>` : ''}
+    <div class="contact">
+      <div class="row"><span class="k">Email</span><span class="v">${esc(L.email)}</span><button class="mini" data-copy="${esc(L.email)}">Copy</button></div>
+    </div>`;
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-copy]'); if (!b) return;
+  try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copied'; }
+  catch { const r = document.createRange(); r.selectNodeContents(b.previousElementSibling); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Selected'; }
+  setTimeout(() => b.textContent = 'Copy', 1600);
+});
+
+/* ---------- list view ---------- */
+$('#list-wrap').innerHTML = `<h1>${txt(C.name || 'Skyler')}</h1><p class="lt">${txt(C.tagline)}</p>` +
+  chapters.map((c, i) => `<article><div class="c-kicker">${esc(LABEL_TXT)}</div>${chapterHTML(c, i)}</article>`).join('') + `<article><div class="c-kicker">${esc(landing.label || 'Landing')}</div>${landingHTML()}</article>`;
+const list = $('#list');
+const openList = () => { list.classList.add('open'); list.scrollTop = 0; };
+const closeList = () => list.classList.remove('open');
+$('#skip').onclick = openList; $('#list-close').onclick = closeList;
+addEventListener('keydown', e => { if (e.key === 'Escape') closeList(); });
+
+/* ---------- timeline (in screen-heights) ---------- */
+const U_INTRO = 1.2, U_CH = 2.6, U_LAND = 2.4;
+const segs = []; let u = U_INTRO;
+chapters.forEach((c, i) => { segs.push({ type: 'chapter', i, a: u, b: u + U_CH, c }); u += U_CH; });
+segs.push({ type: 'landing', i: chapters.length, a: u, b: u + U_LAND }); u += U_LAND;
+const TOTAL = u;
+segs.forEach(s => { s.pa = s.a / TOTAL; s.pb = s.b / TOTAL; });
+const introEnd = U_INTRO / TOTAL;
+
+/* distances along the flight path */
+const GAP = 430, CLOUD = 46, EXIT = 82, D_INTRO = 140;
+let dd = D_INTRO;
+for (const s of segs) {
+  s.start = dd; s.center = dd + GAP; s.exit = s.center + EXIT;
+  if (s.type === 'chapter') { s.dk = [[0, s.start], [0.40, s.center], [0.50, s.exit], [0.90, s.exit + 45], [1, s.exit + 80]]; dd = s.exit + 80; }
+  else { s.dk = [[0, s.start], [0.40, s.center], [0.50, s.exit], [1, s.exit + 330]]; dd = s.exit + 330; }
+}
+const D_END = dd, landSeg = segs[segs.length - 1];
+const HAZE_CH = [[0, 0], [0.30, 0], [0.37, 1], [0.50, 1], [0.58, 0.1], [0.90, 0.1], [1, 0]];
+const HAZE_LD = [[0, 0], [0.30, 0], [0.37, 1], [0.48, 1], [0.58, 0.06], [1, 0.06]];
+const CARD_CH = [[0, 0], [0.5, 0], [0.58, 1], [0.88, 1], [0.95, 0], [1, 0]];
+const CARD_LD = [[0, 0], [0.5, 0], [0.6, 1], [1, 1]];
+const LABEL = [[0, 0], [0.04, 0], [0.12, 1], [0.27, 1], [0.33, 0], [1, 0]];
+
+function segAt(p) { for (const s of segs) if (p < s.pb) return s; return segs[segs.length - 1]; }
+function flightState(p) {
+  if (p < introEnd) return { seg: null, s: p / introEnd, d: D_INTRO * smooth(p / introEnd) * 0.6 + D_INTRO * 0.4 * (p / introEnd) };
+  const seg = segAt(p), s = clamp((p - seg.pa) / (seg.pb - seg.pa));
+  return { seg, s, d: keys(seg.dk, s) };
+}
+
+/* ---------- rail ---------- */
+const rail = $('#rail');
+const railStops = [{ p: 0, name: 'Take-off' }, ...segs.map(s => ({
+  p: s.type === 'landing' ? 1 : lerp(s.pa, s.pb, 0.72),
+  name: s.type === 'landing' ? (landing.label || 'Landing') : `${pad(s.i + 1)} · ${LABEL_TXT}`
+}))];
+railStops.forEach(st => {
+  const b = document.createElement('button'); b.style.top = (st.p * 100) + '%';
+  b.innerHTML = `<span>${esc(st.name)}</span>`; b.setAttribute('aria-label', st.name);
+  b.onclick = () => scrollTo({ top: st.p * maxScroll(), behavior: 'smooth' });
+  rail.appendChild(b); st.el = b;
+});
+
+/* ---------- scroll ---------- */
+let vh = innerHeight, lastW = innerWidth;
+const space = $('#scroll-space');
+const sizeSpace = () => { space.style.height = (TOTAL * vh + vh) + 'px'; };
+sizeSpace();
+const maxScroll = () => Math.max(1, document.documentElement.scrollHeight - innerHeight);
+let targetP = 0, lastScroll = performance.now();
+const readScroll = () => { targetP = clamp(scrollY / maxScroll()); lastScroll = performance.now(); };
+addEventListener('scroll', readScroll, { passive: true });
+readScroll();
+
+/* ---------- boarding + music ---------- */
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+scrollTo(0, 0); readScroll();
+const root = document.documentElement, bgm = $('#bgm'), boardBtn = $('#board'), soundBtn = $('#sound');
+root.classList.add('locked');
+bgm.src = C.music || 'music.mp3';
+$('#board-text').textContent = C.boardButton || 'Board the flight';
+const MUSIC_VOL = typeof C.musicVolume === 'number' ? C.musicVolume : 0.6;
+let musicOn = true, fadeId = 0;
+function fadeTo(target, ms = 1500, then) {
+  const id = ++fadeId, from = bgm.volume, t0 = performance.now();
+  (function step(now) {
+    if (id !== fadeId) return;
+    const k = Math.min(1, Math.max(0, (now - t0) / ms)); bgm.volume = Math.min(1, Math.max(0, from + (target - from) * k));
+    if (k < 1) requestAnimationFrame(step); else if (then) then();
+  })(t0);
+}
+function startMusic() { bgm.volume = 0; const p = bgm.play(); if (p && p.catch) p.catch(() => {}); fadeTo(MUSIC_VOL); }
+boardBtn.onclick = () => {
+  document.body.classList.add('boarded'); root.classList.remove('locked');
+  if (musicOn) startMusic();
+};
+soundBtn.onclick = () => {
+  musicOn = !musicOn;
+  soundBtn.textContent = musicOn ? '♪ On' : '♪ Off'; soundBtn.classList.toggle('off', !musicOn);
+  soundBtn.setAttribute('aria-label', musicOn ? 'Turn music off' : 'Turn music on');
+  if (musicOn) startMusic(); else fadeTo(0, 600, () => bgm.pause());
+};
+document.addEventListener('visibilitychange', () => {
+  if (!document.body.classList.contains('boarded') || !musicOn) return;
+  if (document.hidden) bgm.pause(); else startMusic();
+});
+
+/* ---------- fallback (no WebGL / offline) ---------- */
+function fallback() {
+  root.classList.remove('locked'); document.body.classList.add('boarded'); boardBtn.style.display = 'none';
+  document.documentElement.classList.add('no-webgl');
+  $('#hero').style.position = 'relative'; $('#hero').style.top = '0'; $('#hero').style.paddingTop = '18vh';
+  openList();
+  $('#list-close').style.display = 'none';
+}
+
+/* ====================================================================
+   3D SCENE
+   ==================================================================== */
+let THREE;
+try {
+  THREE = await import('https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js');
+  const t = document.createElement('canvas');
+  if (!(t.getContext('webgl2') || t.getContext('webgl'))) throw new Error('no webgl');
+} catch (e) { console.warn(e); fallback(); }
+
+if (THREE) start();
+
+function start() {
+THREE.ColorManagement.enabled = false;
+const canvas = $('#scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile, powerPreference: 'high-performance' });
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+renderer.setPixelRatio(Math.min(devicePixelRatio, isMobile ? 1.5 : 2));
+renderer.setSize(innerWidth, innerHeight, false);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(isMobile ? 66 : 52, innerWidth / innerHeight, 0.5, 9000);
+scene.add(camera);
+
+
+const NOISE = `
+vec3 mod289(vec3 x){return x - floor(x*(1.0/289.0))*289.0;}
+vec4 mod289(vec4 x){return x - floor(x*(1.0/289.0))*289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314*r;}
+float snoise(vec3 v){
+  const vec2 C = vec2(1.0/6.0, 1.0/3.0); const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i = floor(v + dot(v, C.yyy)); vec3 x0 = v - i + dot(i, C.xxx);
+  vec3 g = step(x0.yzx, x0.xyz); vec3 l = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy); vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx; vec3 x2 = x0 - i2 + C.yyy; vec3 x3 = x0 - D.yyy;
+  i = mod289(i);
+  vec4 p = permute(permute(permute(i.z + vec4(0.0, i1.z, i2.z, 1.0)) + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 0.142857142857; vec3 ns = n_ * D.wyz - D.xzx;
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z); vec4 y_ = floor(j - 7.0 * x_);
+  vec4 x = x_ * ns.x + ns.yyyy; vec4 y = y_ * ns.x + ns.yyyy; vec4 h = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy); vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0)*2.0 + 1.0; vec4 s1 = floor(b1)*2.0 + 1.0; vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy; vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+  vec3 p0 = vec3(a0.xy, h.x); vec3 p1 = vec3(a0.zw, h.y); vec3 p2 = vec3(a1.xy, h.z); vec3 p3 = vec3(a1.zw, h.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0); m = m * m;
+  return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+}`;
+
+/* shared, time-of-day driven uniforms */
+const U = {
+  sunDir: { value: new THREE.Vector3(0, 0.1, -1).normalize() },
+  sunColor: { value: new THREE.Color() },
+  top: { value: new THREE.Color() },
+  horizon: { value: new THREE.Color() },
+  sea: { value: new THREE.Color() },
+  lit: { value: new THREE.Color() },
+  shade: { value: new THREE.Color() },
+  time: { value: 0 },
+  fogNear: { value: 260 }, fogFar: { value: 2400 },
+};
+
+/* ---- sky dome ---- */
+const sky = new THREE.Mesh(new THREE.SphereGeometry(4500, 32, 16), new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, depthTest: false,
+  uniforms: { top: U.top, horizon: U.horizon, sunDir: U.sunDir, sunColor: U.sunColor },
+  vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `uniform vec3 top, horizon, sunColor, sunDir; varying vec3 vDir;
+    void main(){
+      vec3 d = normalize(vDir); float h = d.y;
+      vec3 col = mix(horizon, top, pow(smoothstep(-0.02, 0.8, h), 0.65));
+      float sd = max(dot(d, sunDir), 0.0);
+      col += sunColor * (pow(sd, 5.0) * 0.30 + pow(sd, 42.0) * 0.45);
+      col = mix(col, sunColor, exp(-abs(h) * 14.0) * 0.22 * pow(sd, 1.5));
+      col = mix(col, mix(sunColor, vec3(1.0), 0.65), smoothstep(0.99935, 0.99965, sd));
+      gl_FragColor = vec4(col, 1.0);
+    }`
+}));
+sky.renderOrder = -10; sky.frustumCulled = false; scene.add(sky);
+
+/* ---- sea: layered waves + real planar reflection of sky, clouds and plane ---- */
+const reflRT = new THREE.WebGLRenderTarget(1, 1);
+const reflCam = new THREE.PerspectiveCamera();
+const texMat = new THREE.Matrix4();
+const seaGeo = new THREE.PlaneGeometry(8000, 8000, 1, 1); seaGeo.rotateX(-Math.PI / 2);
+const sea = new THREE.Mesh(seaGeo, new THREE.ShaderMaterial({
+  uniforms: { sea: U.sea, horizon: U.horizon, top: U.top, sunDir: U.sunDir, sunColor: U.sunColor, time: U.time, fogNear: U.fogNear, fogFar: U.fogFar,
+              refl: { value: reflRT.texture }, texMat: { value: texMat } },
+  vertexShader: `uniform mat4 texMat; varying vec3 vW; varying vec4 vR;
+    void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; vR = texMat * w; gl_Position = projectionMatrix * viewMatrix * w; }`,
+  fragmentShader: NOISE + `
+    uniform vec3 sea, horizon, top, sunColor, sunDir; uniform float time, fogNear, fogFar; uniform sampler2D refl;
+    varying vec3 vW; varying vec4 vR;
+    void main(){
+      vec3 v = cameraPosition - vW; float dist = length(v); v /= dist;
+      vec2 p = vW.xz;
+      float fade = 1.0 - smoothstep(120.0, 1300.0, dist);
+      vec2 g = vec2(0.0); float h = 0.0;
+      #define WAVE(ang, len, amp, spd, f) { vec2 d = vec2(cos(ang), sin(ang)); float k = 6.2831853 / len; float ph = dot(d, p) * k + time * spd; h += amp * sin(ph); g += amp * k * cos(ph) * d * f; }
+      WAVE( 0.30, 140.0, 1.60, 0.50, 1.0)
+      WAVE( 1.90,  95.0, 1.10, 0.60, 1.0)
+      WAVE(-0.80,  60.0, 0.70, 0.80, 1.0)
+      WAVE( 2.70,  38.0, 0.45, 1.00, 1.0)
+      WAVE( 0.90,  23.0, 0.25, 1.30, fade)
+      WAVE(-2.20,  15.0, 0.16, 1.60, fade)
+      WAVE( 1.40,   9.0, 0.09, 2.00, fade)
+      WAVE(-0.20,   5.5, 0.05, 2.60, fade)
+      WAVE( 2.20,   3.4, 0.03, 3.20, fade)
+      vec3 q = vec3(p * 0.07, time * 0.25);
+      float n0 = snoise(q), nx = snoise(q + vec3(0.105, 0.0, 0.0)), nz = snoise(q + vec3(0.0, 0.105, 0.0));
+      g += vec2(nx - n0, nz - n0) / 1.5 * 0.6 * fade;
+      vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
+
+      float fres = 0.03 + 0.97 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
+      vec3 r = reflect(-v, n); r.y = abs(r.y);
+      vec2 uv = vR.xy / vR.w + n.xz * (0.03 + 0.035 * fade);
+      vec3 rc = texture2D(refl, clamp(uv, 0.001, 0.999)).rgb;
+
+      float hh = clamp(h / 4.5 * 0.5 + 0.5, 0.0, 1.0);
+      vec3 water = sea * (0.78 + 0.38 * hh);
+      vec3 col = mix(water, rc, clamp(0.22 + fres * 0.85, 0.0, 0.94));
+
+      float sd = max(dot(r, sunDir), 0.0);
+      vec3 hv = normalize(v + sunDir);
+      float spec = pow(max(dot(n, hv), 0.0), 700.0);
+      col += sunColor * smoothstep(0.2, 0.45, spec) * 1.0;
+      col += sunColor * pow(sd, 18.0) * 0.22;
+      float crest = smoothstep(0.80, 0.95, hh) * fade;
+      col = mix(col, mix(col, vec3(1.0), 0.5), crest * 0.2);
+      col = mix(col, horizon, smoothstep(fogNear * 0.6, fogFar * 1.4, dist));
+      gl_FragColor = vec4(col, 1.0);
+    }`
+}));
+scene.add(sea);
+
+/* ---- flight path ---- */
+const BASE = 70;
+function pathPos(d, out) {
+  const x = 38 * Math.sin(d / 310) + 14 * Math.sin(d / 113 + 1.3);
+  let y = BASE + 7 * Math.sin(d / 170 + 0.5);
+  if (d > landSeg.exit) { const k = smooth((d - landSeg.exit) / (D_END - landSeg.exit)); y = lerp(y, 15, k); }
+  return out.set(x, y, -d);
+}
+
+/* ---- clouds: towers of puffs + surface detail, noise-displaced and soft shaded ---- */
+let seed = 7;
+const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+const puffs = []; // [x, y, z, r, baseY, topY]
+function addCloud(cx, cy, cz, s, tall, detail, center, depth = 0) {
+  const base = cy - s * 0.38, big = [];
+  const towers = 2 + Math.floor(rnd() * 3);
+  for (let t = 0; t < towers + (center ? 1 : 0); t++) {
+    const f = t >= towers ? 0.5 : (towers > 1 ? t / (towers - 1) : 0.5);
+    const tx = cx + (f - 0.5) * s * 1.7 + (t >= towers ? 0 : (rnd() - 0.5) * s * 0.4);
+    const tz = cz + (rnd() - 0.5) * s * 0.7;
+    const h = s * (tall ? 0.6 + rnd() * 1.0 : 0.25 + rnd() * 0.45) * (1 - Math.abs(f - 0.5) * 0.7);
+    let r = s * (0.42 + rnd() * 0.18), y = base + r * 0.55;
+    for (;;) {
+      big.push([tx + (rnd() - 0.5) * r * 0.5, y, tz + (rnd() - 0.5) * r * 0.5, r]);
+      y += r * 0.62; r *= 0.8;
+      if (y > base + h || r < s * 0.15) break;
+    }
+  }
+  for (let k = 0; k < 4; k++) { const r = s * (0.34 + rnd() * 0.12); big.push([cx + (rnd() - 0.5) * s * 2.0, base + r * 0.3, cz + (rnd() - 0.5) * s * 0.9, r]); }
+  const all = big.slice();
+  big.forEach(([x, y, z, R]) => {
+    for (let k = 0; k < detail; k++) {
+      let dx = rnd() * 2 - 1, dy = rnd() * 1.2 - 0.2, dz = rnd() * 2 - 1; const L = Math.hypot(dx, dy, dz) || 1;
+      all.push([x + dx / L * R * 0.82, y + dy / L * R * 0.82, z + dz / L * R * 0.82, R * (0.28 + rnd() * 0.22)]);
+    }
+  });
+  let topY = base; all.forEach(p => topY = Math.max(topY, p[1] + p[3]));
+  all.forEach(p => puffs.push([p[0], p[1], p[2], p[3], base, topY, depth]));
+  return topY;
+}
+const tmp = new THREE.Vector3();
+const storyClouds = segs.map(s => { pathPos(s.center, tmp); const top = addCloud(tmp.x, tmp.y, tmp.z, CLOUD, true, isMobile ? 1 : 3, true); return { pos: tmp.clone(), top }; });
+const scatter = (n, sideMin, sideSpread, scMin, scSpread, yMin, ySpread, tallP, det) => {
+  for (let i = 0; i < n; i++) {
+    const d = -300 + rnd() * (D_END + 1000);
+    pathPos(d, tmp);
+    const side = (rnd() < 0.5 ? -1 : 1) * (sideMin + rnd() * rnd() * sideSpread);
+    const sc = scMin + rnd() * scSpread, y = yMin + rnd() * ySpread;
+    if (d < 260) continue;                     // the opening shot gets its own hand-placed clouds
+    addCloud(tmp.x + side, y, -d + (rnd() - 0.5) * 60, sc, rnd() < tallP, det(sc), false);
+  }
+};
+// near the flight path: big towering clouds that frame the route
+scatter(isMobile ? 5 : 10, 110, 180, 26, 26, 35, 70, 0.6, sc => isMobile ? 1 : 2);
+// mid distance: the main field of cumulus
+scatter(isMobile ? 14 : 34, 160, 900, 18, 42, 20, 140, 0.4, sc => isMobile ? (sc > 34 ? 1 : 0) : (sc > 30 ? 2 : 1));
+// far away: wide cloud banks near the horizon so the sky never feels empty
+scatter(isMobile ? 3 : 6, 700, 900, 60, 60, 25, 60, 0.25, sc => isMobile ? 0 : 1);
+/* opening shot: rebuild the take-off camera and drop clouds at exact screen spots,
+   one to the upper right of the plane (beside the text) and one in the top-left corner */
+{
+  const ph = innerWidth <= 760, k = ph ? 1.4 : 1;
+  const P0 = pathPos(0, new THREE.Vector3()), T0 = pathPos(2, new THREE.Vector3()).sub(pathPos(-2, new THREE.Vector3())).normalize();
+  const R0 = new THREE.Vector3().crossVectors(T0, new THREE.Vector3(0, 1, 0)).normalize();
+  const hc = new THREE.PerspectiveCamera(isMobile ? 66 : 52, innerWidth / innerHeight, 0.5, 9000);
+  hc.position.copy(P0).addScaledVector(T0, 12 * k).addScaledVector(R0, 7.5 * (ph ? 1.3 : 1)).add(new THREE.Vector3(0, 0.6 * (ph ? 1.3 : 1), 0));
+  hc.lookAt(P0.clone().add(new THREE.Vector3(0, 2.6, 0))); hc.updateMatrixWorld();
+  const spot = (nx, ny, dist, sc, det, depth = 0) => {
+    const dir = new THREE.Vector3(nx, ny, 0.5).unproject(hc).sub(hc.position).normalize();
+    const w = hc.position.clone().addScaledVector(dir, dist);
+    addCloud(w.x, w.y, w.z, sc, false, det, false, depth);
+  };
+  if (ph) { spot(0.78, -0.12, 420, 88, 1); spot(-0.58, 0.74, 560, 52, 2); }
+  else    { spot(0.85, -0.12, 300, 108, 2); spot(-0.72, 0.68, 520, 64, 2); }
+}
+const puffGeo = new THREE.SphereGeometry(1, isMobile ? 12 : 16, isMobile ? 9 : 12);
+const cloudAttr = new THREE.InstancedBufferAttribute(new Float32Array(puffs.length * 3), 3);
+puffGeo.setAttribute('aCloud', cloudAttr);
+const cloudMat = new THREE.ShaderMaterial({
+  uniforms: { lit: U.lit, shade: U.shade, sunDir: U.sunDir, sunColor: U.sunColor, horizon: U.horizon, top: U.top, time: U.time, fogNear: U.fogNear, fogFar: U.fogFar },
+  vertexShader: NOISE + `
+    attribute vec3 aCloud; uniform float time;
+    varying vec3 vN; varying vec3 vW; varying float vH; varying float vDepth;
+    float disp(vec3 p){ p.x += time * 0.8; return snoise(p * 0.05) * 0.65 + snoise(p * 0.13) * 0.35; }
+    void main(){
+      mat4 m = modelMatrix;
+      #ifdef USE_INSTANCING
+        m = m * instanceMatrix;
+      #endif
+      vec3 c = (m * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+      vec3 p0 = (m * vec4(position, 1.0)).xyz;
+      vec3 wn = normalize(mat3(m) * normal);
+      float r = length(p0 - c), k = r * 0.3;
+      vec3 wp = p0 + wn * disp(p0) * k;
+      vec3 up = abs(wn.y) < 0.95 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+      vec3 t1 = normalize(cross(wn, up)), t2 = cross(wn, t1);
+      float e = r * 0.15;
+      vec3 a = c + normalize(p0 + t1 * e - c) * r; a += normalize(a - c) * disp(a) * k;
+      vec3 b = c + normalize(p0 + t2 * e - c) * r; b += normalize(b - c) * disp(b) * k;
+      vec3 nn = normalize(cross(a - wp, b - wp));
+      if (dot(nn, wn) < 0.0) nn = -nn;
+      float base = aCloud.x;
+      if (wp.y < base) { wp.y = base - (base - wp.y) * 0.18; nn = normalize(mix(nn, vec3(0.0, -1.0, 0.0), 0.7)); }
+      vW = wp; vN = nn;
+      vH = clamp((wp.y - base) / max(aCloud.y - base, 1.0), 0.0, 1.0);
+      vDepth = aCloud.z;
+      gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
+    }`,
+  fragmentShader: NOISE + `
+    uniform vec3 lit, shade, sunColor, sunDir, horizon, top; uniform float fogNear, fogFar;
+    varying vec3 vN; varying vec3 vW; varying float vH; varying float vDepth;
+    void main(){
+      vec3 n = normalize(vN); vec3 v = normalize(cameraPosition - vW);
+      float fn = snoise(vW * 0.22);
+      float ndl = dot(n, sunDir) + fn * 0.14;
+      float diff = smoothstep(-0.3, 0.4, ndl);
+      float hi = smoothstep(0.5, 0.78, ndl);
+      vec3 col = mix(shade, lit, diff);
+      col += (lit - col) * hi * 0.3;
+      col += top * 0.05 * max(n.y, 0.0);
+      col = mix(shade * 0.82, col, mix(0.7, 1.0, smoothstep(0.0, 0.65, vH)));
+      /* richer volume for flagged clouds: shadowed undersides, darker base and crevices, brighter crowns */
+      float under = 1.0 - smoothstep(-0.3, 0.55, n.y);
+      col = mix(col, shade * 0.7, under * 0.5 * vDepth);
+      col = mix(col, shade * 0.75, (1.0 - smoothstep(0.0, 0.55, vH)) * 0.35 * vDepth);
+      col *= 1.0 - vDepth * 0.16 * smoothstep(0.05, -0.6, fn);
+      col += (lit - col) * smoothstep(0.35, 0.95, n.y) * smoothstep(0.4, 1.0, vH) * 0.35 * vDepth;
+      float rim = pow(1.0 - max(dot(n, v), 0.0), 2.5);
+      float back = pow(max(dot(-v, sunDir), 0.0), 3.0);
+      col += sunColor * rim * (0.10 + 0.85 * back) * (0.6 + 0.4 * diff);
+      col = mix(col, horizon, rim * 0.15);
+      col = mix(col, horizon, smoothstep(fogNear, fogFar, length(cameraPosition - vW)));
+      gl_FragColor = vec4(col, 1.0);
+    }`
+});
+const clouds = new THREE.InstancedMesh(puffGeo, cloudMat, puffs.length);
+const m4 = new THREE.Matrix4(), q0 = new THREE.Quaternion(), sv = new THREE.Vector3(), pv = new THREE.Vector3(), yAxis = new THREE.Vector3(0, 1, 0);
+puffs.forEach((p, i) => {
+  q0.setFromAxisAngle(yAxis, rnd() * Math.PI * 2);
+  m4.compose(pv.set(p[0], p[1], p[2]), q0, sv.set(p[3] * (1 + rnd() * 0.15), p[3] * (0.82 + rnd() * 0.12), p[3] * (1 + rnd() * 0.15)));
+  clouds.setMatrixAt(i, m4);
+  cloudAttr.setXYZ(i, p[4], p[5], p[6]);
+});
+clouds.frustumCulled = false;
+scene.add(clouds);
+
+/* ---- plane (built from primitives, toon shaded) ---- */
+const planeU = { sunDir: U.sunDir, sunColor: U.sunColor, shade: U.shade };
+function toon(hex) {
+  return new THREE.ShaderMaterial({
+    uniforms: { ...planeU, base: { value: new THREE.Color(hex) } },
+    vertexShader: `varying vec3 vN; varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform vec3 base, sunColor, sunDir, shade; varying vec3 vN; varying vec3 vW;
+      void main(){
+        vec3 n = normalize(vN); vec3 v = normalize(cameraPosition - vW);
+        float ndl = dot(n, sunDir);
+        float t = smoothstep(0.0, 0.06, ndl) * 0.7 + smoothstep(0.55, 0.62, ndl) * 0.3;
+        vec3 sh = base * (shade * 0.78 + 0.08);
+        vec3 li = base * mix(vec3(1.0), sunColor, 0.3);
+        vec3 col = mix(sh, li, t);
+        col += sunColor * pow(1.0 - max(dot(n, v), 0.0), 4.0) * 0.35;
+        gl_FragColor = vec4(col, 1.0);
+      }`
+  });
+}
+const plane = new THREE.Group(), prop = new THREE.Group(), captain = {};
+(function buildPlane() {
+  const M = { body: toon(0xf6f0e4), blue: toon(0x3b82d6), coral: toon(0xff7454), dark: toon(0x2b3152), glass: toon(0x86b8e6) };
+  const add = (g, m) => { const x = new THREE.Mesh(g, m); plane.add(x); return x; };
+  const along = g => (g.rotateX(-Math.PI / 2), g);               // cylinder axis -> -z (nose)
+  add(along(new THREE.CylinderGeometry(0.56, 0.22, 5.2, 20)), M.body);
+  add(along(new THREE.CylinderGeometry(0.62, 0.58, 0.7, 20)).translate(0, 0, -2.8), M.blue);
+  add(along(new THREE.CylinderGeometry(0.345, 0.335, 0.2, 20)).translate(0, 0, 1.0), M.coral);
+  add(along(new THREE.ConeGeometry(0.24, 0.55, 16)).translate(0, 0, -3.42), M.coral);
+  const taper = (g, k, half) => { const p = g.attributes.position; for (let i = 0; i < p.count; i++) p.setZ(i, p.getZ(i) * (1 - k * Math.abs(p.getX(i)) / half)); g.computeVertexNormals(); return g; };
+  add(taper(new THREE.BoxGeometry(8, 0.14, 1.45, 8, 1, 1), 0.38, 4).translate(0, -0.22, -0.55), M.body);
+  [-1, 1].forEach(sg => add(new THREE.BoxGeometry(0.55, 0.16, 0.98).translate(sg * 3.62, -0.22, -0.55), M.coral));
+  add(taper(new THREE.BoxGeometry(2.9, 0.09, 0.78, 4, 1, 1), 0.35, 1.45).translate(0, 0.06, 2.35), M.body);
+  const fin = new THREE.BoxGeometry(0.09, 1.25, 0.95, 1, 2, 1);
+  { const p = fin.attributes.position; for (let i = 0; i < p.count; i++) if (p.getY(i) > 0) p.setZ(i, p.getZ(i) * 0.55 + 0.22); fin.computeVertexNormals(); }
+  add(fin.translate(0, 0.68, 2.3), M.blue);
+  /* small windscreen in front of the open cockpit */
+  /* ---- the captain: cartoon Skyler, built to match the reference ---- */
+  const C2 = { skin: toon(0xf7d5c1), nose: toon(0xefbfa9), hair: toon(0x1f1816), blazer: toon(0x2b3a6b), lapel: toon(0x35477f),
+               tee: toon(0xf4f1ea), cap: toon(0x734629), capDark: toon(0x55321e), goggle: toon(0x4e3220), lens: toon(0x9fcdea),
+               white: toon(0xffffff), muff: toon(0x9b9da4), muffRim: toon(0x696b72), silver: toon(0xdfe1e6), gem: toon(0x7cc6dc),
+               eye: toon(0x1d1513), mouth: toon(0x7a2b2b), tongue: toon(0xe98b86), blush: toon(0xf5a99f), stick: toon(0x1c1d24),
+               dash: toon(0x8db6e3) };
+  const V3 = (x, y, z) => new THREE.Vector3(x, y, z), UPV = V3(0, 1, 0);
+  // coral rim around the cockpit opening
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.075, 8, 30).rotateX(Math.PI / 2).scale(1, 1, 1.3), M.coral);
+  rim.position.set(0, 0.5, -0.25); plane.add(rim);
+  const cap = new THREE.Group(); cap.position.set(0, 0.02, -0.2); cap.scale.setScalar(1.75); plane.add(cap); captain.root = cap;
+  const put = (g, m, x = 0, y = 0, z = 0, parent = cap) => { const o = new THREE.Mesh(g, m); o.position.set(x, y, z); parent.add(o); return o; };
+  const limb = (a, b, r, m, parent = cap) => {
+    const dir = b.clone().sub(a), L = dir.length();
+    const o = new THREE.Mesh(new THREE.CapsuleGeometry(r, L, 4, 12), m);
+    o.position.copy(a).add(b).multiplyScalar(0.5); o.quaternion.setFromUnitVectors(UPV, dir.normalize()); parent.add(o); return o;
+  };
+  /* dashboard dome */
+  put(new THREE.SphereGeometry(0.26, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2).scale(1.3, 0.6, 0.8), C2.dash, 0, 0.14, -0.7);
+  /* torso: navy blazer, white tee, notch lapels, button, necklace */
+  put(new THREE.CylinderGeometry(0.29, 0.38, 0.62, 22), C2.blazer, 0, 0.25, 0);
+  [-1, 1].forEach(sx => put(new THREE.SphereGeometry(0.14, 16, 12).scale(1, 0.8, 1), C2.blazer, sx * 0.28, 0.5, 0));
+  {
+    const teeG = new THREE.CylinderGeometry(0.302, 0.357, 0.42, 10, 1, true, Math.PI - 0.45, 0.9);
+    const p = teeG.attributes.position;
+    for (let v = 0; v < p.count; v++) if (p.getY(v) < 0) { const x = p.getX(v) * 0.18; p.setX(v, x); p.setZ(v, -Math.sqrt(0.357 * 0.357 - x * x)); }
+    teeG.computeVertexNormals();
+    put(teeG, C2.tee, 0, 0.36, 0);                                                       // white tee showing in the V
+    [-1, 1].forEach(sx => limb(V3(sx * 0.135, 0.57, -0.27), V3(sx * 0.024, 0.16, -0.356), 0.022, C2.lapel)); // lapel edges
+    const neckline = put(new THREE.TorusGeometry(0.118, 0.024, 8, 24), C2.tee, 0, 0.59, -0.005); neckline.rotation.x = Math.PI / 2;
+  }
+  put(new THREE.SphereGeometry(0.022, 10, 8), C2.stick, 0, 0.13, -0.355);
+  put(new THREE.CylinderGeometry(0.11, 0.12, 0.18, 14), C2.skin, 0, 0.66, 0);
+  const nk = put(new THREE.TorusGeometry(0.115, 0.007, 6, 30), C2.silver, 0, 0.6, -0.04); nk.rotation.x = Math.PI / 2 - 0.5;
+  put(new THREE.SphereGeometry(0.024, 10, 8), C2.gem, 0, 0.53, -0.15);
+  /* arms: two-bone pose so each fist lands exactly on its control stick */
+  [-1, 1].forEach(sx => {
+    const S = V3(sx * 0.31, 0.5, 0), G = V3(sx * 0.19, 0.24, -0.44), a = 0.29, b = 0.27;
+    const dv = G.clone().sub(S), d = Math.min(dv.length(), a + b - 1e-3); dv.normalize();
+    const ca = (a * a + d * d - b * b) / (2 * a * d), sa = Math.sqrt(Math.max(0, 1 - ca * ca));
+    const pole = V3(sx * 0.6, -1, 0.35).normalize(); const perp = pole.clone().addScaledVector(dv, -pole.dot(dv)).normalize();
+    const E = S.clone().addScaledVector(dv, a * ca).addScaledVector(perp, a * sa);
+    limb(S, E, 0.075, C2.blazer);
+    const cuff = G.clone().addScaledVector(G.clone().sub(E).normalize(), -0.06);
+    limb(E, cuff, 0.068, C2.blazer);
+    limb(V3(sx * 0.19, -0.1, -0.44), V3(sx * 0.19, 0.33, -0.44), 0.022, C2.stick);            // stick shaft
+    put(new THREE.SphereGeometry(0.046, 12, 10), C2.stick, sx * 0.19, 0.36, -0.44);           // knob
+    put(new THREE.SphereGeometry(0.072, 14, 12).scale(1, 1.15, 1.1), C2.skin, G.x, G.y, G.z);   // fist wrapped round the shaft
+    limb(V3(G.x - sx * 0.02, G.y + 0.04, G.z - 0.05), V3(G.x - sx * 0.035, G.y + 0.075, G.z - 0.06), 0.024, C2.skin); // thumb on top
+  });
+  /* head */
+  const head = new THREE.Group(); head.position.set(0, 1.02, 0); cap.add(head); captain.head = head;
+  put(new THREE.SphereGeometry(0.36, 30, 22).scale(0.96, 1.06, 0.96), C2.skin, 0, 0, 0, head);
+  put(new THREE.SphereGeometry(0.27, 24, 16).scale(1, 0.9, 0.95), C2.skin, 0, -0.12, -0.06, head);          // cheeks + chin
+  put(new THREE.SphereGeometry(0.034, 12, 10).scale(1, 1, 1.2), C2.nose, 0, -0.035, -0.355, head);                            // nose
+  [-1, 1].forEach(sx => {
+    put(new THREE.SphereGeometry(0.048, 14, 12).scale(0.8, 1.2, 0.45), C2.eye, sx * 0.125, 0.02, -0.33, head);  // eyes
+    put(new THREE.SphereGeometry(0.013, 8, 6), C2.white, sx * 0.125 + 0.013, 0.045, -0.352, head);            // eye sparkle
+    const lash = limb(V3(sx * 0.09, 0.075, -0.333), V3(sx * 0.165, 0.085, -0.322), 0.01, C2.eye, head);       // lash line
+    const br = put(new THREE.TorusGeometry(0.065, 0.011, 6, 16, 2.0), C2.eye, sx * 0.125, 0.105, -0.322, head); br.rotation.z = Math.PI / 2 - 1.0; // brow
+  });
+  put(new THREE.SphereGeometry(0.085, 18, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2).scale(1.2, 0.85, 0.35), C2.mouth, 0, -0.13, -0.33, head); // open smile
+  put(new THREE.BoxGeometry(0.15, 0.026, 0.02), C2.white, 0, -0.134, -0.352, head);                         // teeth
+  /* black hair: crown dome + back and sides */
+  put(new THREE.SphereGeometry(0.385, 30, 22, -0.45, Math.PI + 0.9), C2.hair, 0, 0.01, 0.02, head);
+  put(new THREE.SphereGeometry(0.39, 30, 14, 0, Math.PI * 2, 0, Math.PI * 0.36), C2.hair, 0, 0.02, 0.0, head);
+  put(new THREE.SphereGeometry(0.388, 32, 16, -0.95, Math.PI + 1.9, 0, Math.PI * 0.53), C2.hair, 0, 0.01, 0.0, head);  // temples + sides
+  [-1, 1].forEach(sx => put(new THREE.SphereGeometry(0.17, 14, 12).scale(0.6, 1.25, 1), C2.hair, sx * 0.33, -0.12, 0.08, head)); // hair behind the ear cups
+  /* short side-swept bangs and face-framing strands */
+  [[-0.17, 0.16, -0.3, 0.15, 0.45], [-0.05, 0.155, -0.335, 0.15, 0.25], [0.08, 0.13, -0.34, 0.13, 0.0], [0.2, 0.08, -0.3, 0.1, -0.35]]
+    .forEach(([x, y, z, r, rz]) => { const b = put(new THREE.SphereGeometry(r, 14, 10).scale(1.3, 0.5, 0.5), C2.hair, x, y, z, head); b.rotation.z = rz; });
+  [-1, 1].forEach(sx => limb(V3(sx * 0.27, 0.05, -0.23), V3(sx * 0.285, -0.3, -0.2), 0.048, C2.hair, head));
+  /* goggles resting on top of the head, brown strap all the way round */
+  const strap = put(new THREE.TorusGeometry(0.37, 0.024, 6, 44), C2.goggle, 0, 0.22, 0.01, head); strap.rotation.x = Math.PI / 2 + 0.25;
+  [-1, 1].forEach(sx => {
+    const f = put(new THREE.TorusGeometry(0.11, 0.042, 10, 24), C2.goggle, sx * 0.14, 0.33, -0.22, head); f.rotation.x = -1.05;
+    const l = put(new THREE.CylinderGeometry(0.088, 0.088, 0.03, 20), C2.lens, sx * 0.14, 0.33, -0.22, head); l.rotation.x = Math.PI / 2 - 1.05;
+    put(new THREE.SphereGeometry(0.02, 8, 6), C2.white, sx * 0.14 - 0.035, 0.37, -0.25, head);
+  });
+  put(new THREE.BoxGeometry(0.07, 0.035, 0.035), C2.goggle, 0, 0.34, -0.25, head);
+  /* grey over-the-head headset with a boom mic on her left */
+  put(new THREE.TorusGeometry(0.43, 0.04, 10, 40, Math.PI), C2.muff, 0, -0.03, 0.03, head);
+  [-1, 1].forEach(sx => {
+    const m = put(new THREE.CylinderGeometry(0.145, 0.145, 0.12, 22), C2.muff, sx * 0.39, -0.04, 0.02, head); m.rotation.z = Math.PI / 2;
+    const r2 = put(new THREE.TorusGeometry(0.13, 0.024, 8, 22), C2.muffRim, sx * 0.452, -0.04, 0.02, head); r2.rotation.y = Math.PI / 2;
+  });
+  limb(V3(-0.43, -0.1, -0.04), V3(-0.36, -0.2, -0.22), 0.013, C2.muff, head);
+  limb(V3(-0.36, -0.2, -0.22), V3(-0.14, -0.21, -0.33), 0.013, C2.muff, head);
+  put(new THREE.CapsuleGeometry(0.024, 0.04, 4, 8).rotateZ(Math.PI / 2), C2.stick, -0.12, -0.21, -0.335, head);
+  /* ponytail at the back of the head, purple hair tie, curls up at the tip */
+  captain.pony = [];
+  const tie = new THREE.Group(); tie.position.set(0, 0.0, 0.37); head.add(tie);
+  put(new THREE.TorusGeometry(0.075, 0.03, 8, 16), toon(0x5a58b8), 0, 0, 0.02, tie);
+  put(new THREE.SphereGeometry(0.1, 12, 10), C2.hair, 0, 0, 0, tie);
+  let parentSeg = tie;
+  [[0.12, 0.18], [0.115, 0.18], [0.095, 0.17], [0.07, 0.15], [0.045, 0.12]].forEach(([r, L], k) => {
+    const seg = new THREE.Group(); seg.position.set(0, 0, [0.03, 0.21, 0.21, 0.19, 0.16][k]); parentSeg.add(seg);
+    put(new THREE.CapsuleGeometry(r, L, 4, 10).rotateX(Math.PI / 2).translate(0, 0, L / 2 + r * 0.5), C2.hair, 0, 0, 0, seg);
+    captain.pony.push(seg); parentSeg = seg;
+  });
+  /* propeller */
+  [0, Math.PI].forEach(r => {
+    const b = new THREE.Group(); b.rotation.z = r; prop.add(b);
+    b.add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.45, 0.06).translate(0, 0.74, 0), M.dark));
+    b.add(new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.24, 0.07).translate(0, 1.36, 0), M.coral));
+  });
+  prop.position.z = -3.32; plane.add(prop);
+})();
+scene.add(plane);
+
+/* ---- speed lines (in camera space) ---- */
+const lines = new THREE.Group(); camera.add(lines);
+const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+const lineGeo = new THREE.BoxGeometry(0.035, 0.035, 9);
+const lineData = [];
+for (let i = 0; i < (isMobile ? 12 : 26); i++) {
+  const mesh = new THREE.Mesh(lineGeo, lineMat), a = Math.random() * Math.PI * 2, r = 5 + Math.random() * 9;
+  mesh.position.set(Math.cos(a) * r * 1.4, Math.sin(a) * r, -Math.random() * 80);
+  lines.add(mesh); lineData.push(mesh);
+}
+
+/* ---- planar reflection pass (mirrored camera -> texture the sea samples) ---- */
+const rtScale = isMobile ? 0.35 : 0.5;
+function sizeRT() { const pr = renderer.getPixelRatio(); reflRT.setSize(Math.max(1, innerWidth * pr * rtScale | 0), Math.max(1, innerHeight * pr * rtScale | 0)); }
+sizeRT();
+const rotM = new THREE.Matrix4(), NRM = new THREE.Vector3(0, 1, 0), plp = new THREE.Vector3(), cwp = new THREE.Vector3(), lap = new THREE.Vector3(), vv = new THREE.Vector3(), tv = new THREE.Vector3();
+function renderReflection() {
+  camera.updateMatrixWorld();
+  cwp.setFromMatrixPosition(camera.matrixWorld);
+  plp.set(cwp.x, 0, cwp.z);
+  rotM.extractRotation(camera.matrixWorld);
+  lap.set(0, 0, -1).applyMatrix4(rotM).add(cwp);
+  vv.subVectors(plp, cwp).reflect(NRM).negate().add(plp);
+  tv.subVectors(plp, lap).reflect(NRM).negate().add(plp);
+  reflCam.position.copy(vv);
+  reflCam.up.set(0, 1, 0).applyMatrix4(rotM).reflect(NRM);
+  reflCam.lookAt(tv);
+  reflCam.updateMatrixWorld();
+  reflCam.projectionMatrix.copy(camera.projectionMatrix);
+  reflCam.projectionMatrixInverse.copy(camera.projectionMatrixInverse);
+  texMat.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1).multiply(reflCam.projectionMatrix).multiply(reflCam.matrixWorldInverse);
+  sea.visible = false; lines.visible = false;
+  sky.position.copy(reflCam.position);
+  renderer.setRenderTarget(reflRT); renderer.render(scene, reflCam); renderer.setRenderTarget(null);
+  sea.visible = true; lines.visible = true;
+  sky.position.copy(camera.position);
+}
+
+/* ---- time-of-day palette: sunrise -> clear blue -> golden -> sunset ---- */
+const PAL = [
+  { p: 0.00, top: '#4a5f9e', hor: '#ffc4a3', sea: '#5d72a4', sun: '#ffd3a8', lit: '#ffe7dc', shade: '#a593c6', accent: '#e9785d', el: 3,  az: -32 },
+  { p: 0.15, top: '#5e8ed6', hor: '#ffe2c8', sea: '#4c7ebf', sun: '#fff0dc', lit: '#fff6ef', shade: '#aab5dc', accent: '#e4805a', el: 18, az: -24 },
+  { p: 0.36, top: '#2d7de0', hor: '#bde0fc', sea: '#2a6ec0', sun: '#ffffff', lit: '#ffffff', shade: '#a6c3e7', accent: '#2f78d6', el: 48, az: -10 },
+  { p: 0.58, top: '#3880d8', hor: '#d0e6f6', sea: '#2e6db6', sun: '#fff6e6', lit: '#fffaf3', shade: '#afc1e0', accent: '#3a7bcf', el: 44, az: 2 },
+  { p: 0.76, top: '#5a4e9c', hor: '#ffbe7c', sea: '#58579a', sun: '#ffd08c', lit: '#ffe1ba', shade: '#9b80c0', accent: '#d9773f', el: 15, az: 8 },
+  { p: 0.90, top: '#3a2a72', hor: '#ff9b5e', sea: '#48397c', sun: '#ffac6c', lit: '#ffc59c', shade: '#7c5ba9', accent: '#d8643f', el: 6,  az: -2 },
+  { p: 1.00, top: '#2a1d5c', hor: '#ff8048', sea: '#3b2b66', sun: '#ff9157', lit: '#ffb58d', shade: '#6b4b9b', accent: '#d4573a', el: 1.6, az: -9 },
+].map(k => ({ ...k, c: Object.fromEntries(['top', 'hor', 'sea', 'sun', 'lit', 'shade', 'accent'].map(n => [n, new THREE.Color(k[n])])) }));
+const cA = new THREE.Color(), hazeC = new THREE.Color();
+function applyPalette(p) {
+  let i = 0; while (i < PAL.length - 2 && p > PAL[i + 1].p) i++;
+  const A = PAL[i], B = PAL[i + 1], t = smooth((p - A.p) / (B.p - A.p));
+  const mix = (n, target) => target.copy(A.c[n]).lerp(B.c[n], t);
+  mix('top', U.top.value); mix('hor', U.horizon.value); mix('sea', U.sea.value);
+  mix('sun', U.sunColor.value); mix('lit', U.lit.value); mix('shade', U.shade.value);
+  const el = THREE.MathUtils.degToRad(lerp(A.el, B.el, t)), az = THREE.MathUtils.degToRad(lerp(A.az, B.az, t));
+  U.sunDir.value.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)).normalize();
+  mix('accent', cA);
+  hazeC.copy(U.lit.value).lerp(U.horizon.value, 0.25);
+  const css = document.documentElement.style;
+  css.setProperty('--accent', '#' + cA.getHexString());
+  css.setProperty('--haze', `${hazeC.r * 255 | 0},${hazeC.g * 255 | 0},${hazeC.b * 255 | 0}`);
+}
+
+/* ---- cloud labels ---- */
+const labelsEl = $('#labels');
+const labels = segs.map((s, i) => {
+  const el = document.createElement('div'); el.className = 'cloud-label';
+  el.innerHTML = s.type === 'landing'
+    ? `<span class="num">${esc(landing.label || 'Landing')}</span><span class="q">Contact</span><span class="stem"></span>`
+    : `<span class="num">${pad(i + 1)}</span><span class="q">${esc(LABEL_TXT)}</span><span class="stem"></span>`;
+  labelsEl.appendChild(el);
+  return { el, pos: new THREE.Vector3(storyClouds[i].pos.x, storyClouds[i].top + 4, storyClouds[i].pos.z) };
+});
+
+/* ---- card ---- */
+const card = $('#card'); let cardFor = -1;
+
+/* ---- resize ---- */
+addEventListener('resize', () => {
+  renderer.setSize(innerWidth, innerHeight, false); sizeRT();
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  if (innerWidth !== lastW) { lastW = innerWidth; vh = innerHeight; sizeSpace(); readScroll(); }
+});
+
+/* ---- loop ---- */
+const P = new THREE.Vector3(), Pa = new THREE.Vector3(), Pb = new THREE.Vector3(), T = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+const R = new THREE.Vector3(), camPos = new THREE.Vector3(), tgt = new THREE.Vector3(), heroT = new THREE.Vector3(), chaseT = new THREE.Vector3(), proj = new THREE.Vector3();
+const hero = $('#hero'), hint = $('#scroll-hint'), nudge = $('#nudge'), haze = $('#haze'), fill = rail.querySelector('.fill'), topProg = $('#topbar-progress');
+let curP = targetP, time = 0, last = performance.now();
+
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; time += dt;
+  const prev = curP;
+  curP += (targetP - curP) * Math.min(1, dt * 3.2);
+  if (Math.abs(targetP - curP) < 1e-5) curP = targetP;
+  const vel = Math.abs(curP - prev) / Math.max(dt, 1e-4);
+  U.time.value = time;
+  applyPalette(curP);
+
+  const phone = innerWidth <= 760;
+  const st = flightState(curP), d = st.d;
+  pathPos(d, P); pathPos(d + 2, Pb); pathPos(d - 2, Pa); T.subVectors(Pb, Pa).normalize();
+  pathPos(d + 25, Pb); pathPos(d - 25, Pa);
+  const xpp = (Pb.x - 2 * P.x + Pa.x) / 625;
+  const roll = clamp(-xpp * 420, -0.65, 0.65);
+
+  plane.position.copy(P); plane.position.y += Math.sin(time * 1.3) * 0.22;
+  plane.lookAt(tmp.copy(plane.position).sub(T));
+  plane.rotateZ(roll + Math.sin(time * 0.9) * 0.045);
+  prop.rotation.z += dt * 21;
+  /* captain: hands stay on the sticks; head bobs a little, ponytail flutters */
+  captain.root.position.y = 0.02 + Math.sin(time * 1.7) * 0.02;
+  captain.head.rotation.y = Math.sin(time * 0.7) * 0.14;
+  captain.head.rotation.z = Math.sin(time * 0.9 + 1) * 0.05;
+  captain.pony.forEach((seg, k) => {
+    seg.rotation.x = [0.35, 0.45, 0.4, -0.2, -0.55][k] + Math.sin(time * 8 - k * 0.9) * 0.06;
+    seg.rotation.y = (k === 0 ? 0.15 : 0.03) + Math.sin(time * 6 - k * 1.1) * (0.08 + k * 0.04);
+  });
+
+  /* camera: hero (front three-quarter) -> chase -> landing side shot */
+  const heroK = smooth(curP / introEnd);
+  let back = lerp(-12, 15, heroK), side = lerp(7.5, 2.4, heroK), up = lerp(0.6, 4.8, heroK);
+  let lk = 0;
+  if (st.seg && st.seg.type === 'landing') lk = smooth((st.s - 0.5) / 0.4);
+  back = lerp(back, 13, lk); side = lerp(side, 3.5, lk); up = lerp(up, 2.0, lk);
+  if (phone) { back *= 1.4; side *= 1.3; up *= 1.3; }
+  R.crossVectors(T, UP).normalize();
+  camPos.copy(P).addScaledVector(T, -back).addScaledVector(R, side).addScaledVector(UP, up);
+  camera.position.copy(camPos);
+  heroT.copy(P).addScaledVector(UP, 2.6);
+  chaseT.copy(P).addScaledVector(T, 14).addScaledVector(UP, 1.8);
+  tgt.copy(heroT).lerp(chaseT, heroK).addScaledVector(T, lk * 8);
+  camera.lookAt(tgt);
+  camera.rotateZ(roll * 0.22 * heroK);
+
+  /* sky + sea follow the camera */
+  sky.position.copy(camera.position);
+  sea.position.set(Math.round(camera.position.x / 50) * 50, 0, Math.round(camera.position.z / 50) * 50);
+
+  /* overlays */
+  let hz = 0, cv = 0, active = -1;
+  if (st.seg) {
+    const L = st.seg.type === 'landing';
+    hz = keys(L ? HAZE_LD : HAZE_CH, st.s);
+    cv = keys(L ? CARD_LD : CARD_CH, st.s);
+    if (cv > 0.001) active = st.seg.i;
+  }
+  haze.style.opacity = hz.toFixed(3);
+
+  if (active !== cardFor && active >= 0) {
+    card.innerHTML = active < chapters.length ? chapterHTML(chapters[active], active) : landingHTML();
+    card.scrollTop = 0; cardFor = active;
+  }
+  card.style.opacity = cv.toFixed(3);
+  const lift = (1 - cv) * 18;
+  card.style.transform = phone ? `translateY(${lift}px)` : `translateY(calc(-50% + ${lift}px))`;
+  card.classList.toggle('on', cv > 0.5);
+  document.body.classList.toggle('card-on', cv > 0.05);
+
+  /* shift the 3D framing so the plane sits beside (desktop) or above (phone) the card */
+  const W = innerWidth, H = innerHeight;
+  if (phone) camera.setViewOffset(W, H, 0, H * 0.32 * cv, W, H);
+  else camera.setViewOffset(W, H, W * 0.15 * cv, 0, W, H);
+
+  /* labels */
+  segs.forEach((s, i) => {
+    const lb = labels[i];
+    const o = (st.seg === s) ? keys(LABEL, st.s) : 0;
+    if (o < 0.01) { lb.el.style.opacity = 0; return; }
+    proj.copy(lb.pos).project(camera);
+    if (proj.z > 1) { lb.el.style.opacity = 0; return; }
+    lb.el.style.opacity = o.toFixed(3);
+    lb.el.style.left = ((proj.x * 0.5 + 0.5) * W) + 'px';
+    lb.el.style.top = ((-proj.y * 0.5 + 0.5) * H) + 'px';
+  });
+
+  /* hero, hints */
+  const hk = smooth(curP / (introEnd * 0.5));
+  hero.style.opacity = (1 - hk).toFixed(3);
+  hero.style.transform = `translateY(${-hk * 40}px)`;
+  hint.style.opacity = targetP < 0.004 ? 1 : 0;
+  const idle = now - lastScroll > 2600;
+  nudge.classList.toggle('on', idle && curP > 0.01 && cv < 0.05 && targetP < 0.995 && !list.classList.contains('open'));
+
+  /* speed lines */
+  const sl = clamp((vel - 0.004) * 30) * 0.55 + hz * 0.15;
+  lineMat.opacity = sl;
+  lineData.forEach(m => { m.position.z += dt * (40 + vel * 3000); if (m.position.z > 6) m.position.z -= 86; });
+
+  /* progress */
+  fill.style.height = (curP * 100) + '%';
+  topProg.style.width = (curP * 100) + '%';
+  const activeStop = st.seg ? st.seg.i + 1 : 0;
+  railStops.forEach((r, i) => {
+    r.el.classList.toggle('done', curP >= r.p - 0.002);
+    r.el.classList.toggle('active', i === activeStop);
+  });
+
+  renderReflection();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>
